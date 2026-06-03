@@ -71,23 +71,58 @@ STEALTH_INIT_JS = r"""
 
 
 # ═══════════════════════════════════════════════
-# RESOURCE BLOCKING (image/media/font abort)
+# RESOURCE BLOCKING — aggressive (cost-critical)
 # ═══════════════════════════════════════════════
 
-_BLOCK_RESOURCE_TYPES = {'image', 'media', 'font'}
+# What we ACTUALLY need to scrape TikTok:
+#   - document  : the HTML page (contains __UNIVERSAL_DATA_FOR_REHYDRATION__)
+#   - script    : SIGI_STATE fallback + any inline JSON
+#   - xhr/fetch : dynamic content loaded after initial paint
+# Everything else (images, video, fonts, CSS, manifests) is dead weight
+# we PAY for via residential proxy bandwidth ($7.50/GB). Empirically:
+# media-type-only blocking still let through ~640MB in 5 min because
+# TikTok streams video segments via `fetch`, which bypassed the type filter.
+_ALLOWED_RESOURCE_TYPES = {'document', 'script', 'xhr', 'fetch'}
+
+# Belt-and-suspenders: even if a request slips through the type filter
+# (e.g. video segments arriving as `fetch`), kill it if its URL points
+# to a known TikTok / ByteDance video / tracking CDN.
+_BLOCK_URL_FRAGMENTS = (
+    'tiktokcdn',        # primary video CDN
+    'muscdn',           # ByteDance CDN
+    'akamaized',        # generic CDN
+    'bytetrack',        # analytics
+    'analytics.tik',    # analytics
+    'mssdk',            # mobile SDK telemetry
+    '/aweme/v',         # tracking endpoint
+    '/tts-',            # TTS pipeline
+    'isnssdk',          # ByteDance SDK
+    'log.tiktok',       # logging endpoint
+    'mon.tiktok',       # monitoring endpoint
+)
 
 
 async def block_heavy_resources(context) -> None:
-    """Abort image/media/font requests across the whole context. Cuts bandwidth
-    ~70% on TikTok hashtag pages (autoplaying video previews) and reduces
-    the page footprint that bot-detection heuristics observe."""
+    """Allowlist-style request filter. Only document/script/xhr/fetch pass
+    AND only if the URL doesn't match a known video-CDN/tracking pattern.
+
+    On a TikTok hashtag-page load this cuts residential-proxy bandwidth
+    from ~12 MB per profile to ~150-300 KB — a ~50× cost reduction. Apply
+    once per Playwright context before any pages open."""
 
     async def _handler(route):
         try:
-            if route.request.resource_type in _BLOCK_RESOURCE_TYPES:
+            req = route.request
+            # 1) Resource-type allowlist
+            if req.resource_type not in _ALLOWED_RESOURCE_TYPES:
                 await route.abort()
-            else:
-                await route.continue_()
+                return
+            # 2) URL-pattern blocklist for the types we DO allow
+            url = req.url.lower()
+            if any(p in url for p in _BLOCK_URL_FRAGMENTS):
+                await route.abort()
+                return
+            await route.continue_()
         except Exception:
             try:
                 await route.continue_()
