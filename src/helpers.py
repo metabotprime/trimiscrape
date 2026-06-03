@@ -71,53 +71,48 @@ STEALTH_INIT_JS = r"""
 
 
 # ═══════════════════════════════════════════════
-# RESOURCE BLOCKING — aggressive (cost-critical)
+# RESOURCE BLOCKING — calibrated
 # ═══════════════════════════════════════════════
 
-# What we ACTUALLY need to scrape TikTok:
-#   - document  : the HTML page (contains __UNIVERSAL_DATA_FOR_REHYDRATION__)
-#   - script    : SIGI_STATE fallback + any inline JSON
-#   - xhr/fetch : dynamic content loaded after initial paint
-# Everything else (images, video, fonts, CSS, manifests) is dead weight
-# we PAY for via residential proxy bandwidth ($7.50/GB). Empirically:
-# media-type-only blocking still let through ~640MB in 5 min because
-# TikTok streams video segments via `fetch`, which bypassed the type filter.
-_ALLOWED_RESOURCE_TYPES = {'document', 'script', 'xhr', 'fetch'}
+# Block these resource types by Playwright's classification.
+# Empirically: image+media+font alone yields candidates correctly.
+# Adding stylesheet/manifest BROKE TikTok's React hydration (page renders
+# but data is never populated).
+_BLOCK_RESOURCE_TYPES = {'image', 'media', 'font'}
 
-# Belt-and-suspenders: even if a request slips through the type filter
-# (e.g. video segments arriving as `fetch`), kill it if its URL points
-# to a known TikTok / ByteDance video / tracking CDN.
+# Targeted URL blocklist for known TikTok / ByteDance video CDN hosts.
+# These deliver MP4/HLS segments that account for the bulk of residential
+# proxy bandwidth even though Playwright sometimes types them as `fetch`
+# instead of `media`. EXACT DOMAIN suffix to avoid accidentally matching
+# TikTok's own /api endpoints (e.g. `/aweme/...` IS TikTok's data path
+# and must NOT be blocked — that's how content loads).
 _BLOCK_URL_FRAGMENTS = (
-    'tiktokcdn',        # primary video CDN
-    'muscdn',           # ByteDance CDN
-    'akamaized',        # generic CDN
-    'bytetrack',        # analytics
-    'analytics.tik',    # analytics
-    'mssdk',            # mobile SDK telemetry
-    '/aweme/v',         # tracking endpoint
-    '/tts-',            # TTS pipeline
-    'isnssdk',          # ByteDance SDK
-    'log.tiktok',       # logging endpoint
-    'mon.tiktok',       # monitoring endpoint
+    '.tiktokcdn.com',     # primary video CDN (must match host, not path)
+    '.muscdn.com',        # ByteDance video CDN
+    '.akamaized.net',     # generic asset/video CDN
+    'p16-sign-va.tiktokcdn',  # signed-asset CDN
+    'p77-sign-va.tiktokcdn',  # signed-asset CDN
 )
 
 
 async def block_heavy_resources(context) -> None:
-    """Allowlist-style request filter. Only document/script/xhr/fetch pass
-    AND only if the URL doesn't match a known video-CDN/tracking pattern.
+    """Block image/media/font requests AND requests to known video CDN
+    hosts (which sometimes arrive as fetch and bypass the type filter).
 
-    On a TikTok hashtag-page load this cuts residential-proxy bandwidth
-    from ~12 MB per profile to ~150-300 KB — a ~50× cost reduction. Apply
-    once per Playwright context before any pages open."""
+    Calibrated to balance cost vs correctness: type-based blocking alone
+    leaks ~10x bandwidth on TikTok because video chunks come via fetch;
+    aggressive allowlist breaks the React app's data hydration. This
+    hybrid drops a target ~80% of bandwidth while keeping every TikTok
+    API request intact."""
 
     async def _handler(route):
         try:
             req = route.request
-            # 1) Resource-type allowlist
-            if req.resource_type not in _ALLOWED_RESOURCE_TYPES:
+            # 1) Block by resource type
+            if req.resource_type in _BLOCK_RESOURCE_TYPES:
                 await route.abort()
                 return
-            # 2) URL-pattern blocklist for the types we DO allow
+            # 2) Block by URL host for video-CDN hosts (the big bandwidth hog)
             url = req.url.lower()
             if any(p in url for p in _BLOCK_URL_FRAGMENTS):
                 await route.abort()
