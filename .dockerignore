@@ -1,0 +1,21 @@
+# Local-only state — never bake into the image
+storage/
+.venv/
+venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Docs aren't needed at runtime
+README.md
+*.md
+LICENSE
+
+# Editor / OS noise
+.git/
+.gitignore
+.DS_Store
+.idea/
+.vscode/
+*.swp
