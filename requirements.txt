@@ -1,0 +1,8 @@
+# Apify Python SDK — 3.x is the current major (verified on PyPI 2026-05).
+# Pinning lower bound to a known-good 3.4.1 and capping at <4 so future
+# major bumps don't silently break this Actor on rebuild.
+apify>=3.4.1,<4
+
+# Playwright is pre-installed in the base image (apify/actor-python-playwright)
+# along with browsers and OS libs. We intentionally do NOT pin it here — let
+# the base image control the matched browser+Python combo.
