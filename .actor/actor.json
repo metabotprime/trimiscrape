@@ -1,0 +1,25 @@
+{
+    "actorSpecification": 1,
+    "name": "trimi-tiktok-email-hunter",
+    "title": "Trimi TikTok Email Hunter",
+    "description": "ICP-tuned TikTok email-discovery actor — finds partnership-ready mom-creator and wellness-routine influencers (1.5k–150k followers, US-only, age-35-55 signal-scored) with deliverable emails in bio or link-in-bio. Uses Apify residential proxies.",
+    "version": "0.1",
+    "buildTag": "latest",
+    "minMemoryMbytes": 2048,
+    "maxMemoryMbytes": 8192,
+    "defaultRunOptions": {
+        "build": "latest",
+        "memoryMbytes": 4096,
+        "timeoutSecs": 14400
+    },
+    "meta": {
+        "templateId": "python-empty",
+        "generatedBy": "Claude Code with Claude Opus 4.7"
+    },
+    "input": "./input_schema.json",
+    "output": "./output_schema.json",
+    "storages": {
+        "dataset": "./dataset_schema.json"
+    },
+    "dockerfile": "../Dockerfile"
+}
