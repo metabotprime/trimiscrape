@@ -1,6 +1,6 @@
 # Trimi TikTok Email Hunter
 
-ICP-tuned TikTok email-discovery actor. Finds partnership-ready mom-creator and wellness-routine influencers (1.5k–150k followers, US-only, age-35-55 signal-scored) with discoverable emails. Built specifically for the Trimi brand's outreach pipeline.
+ICP-tuned TikTok email-discovery actor. Finds partnership-ready mom-creator and wellness-routine influencers (15k–100k followers, US-only, age-35-55 signal-scored) with discoverable emails. Built specifically for the Trimi brand's outreach pipeline.
 
 ## What this actor does
 
