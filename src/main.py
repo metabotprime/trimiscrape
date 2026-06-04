@@ -15,8 +15,15 @@ from __future__ import annotations
 
 import asyncio
 import random
+import re
 from typing import Optional
 from urllib.parse import urlparse
+
+
+# Apify proxy session_id regex is '^[\w._~]+$' — no hyphens, no slashes,
+# only letters/digits/underscore plus . _ ~. Used to scrub the hashtag
+# (which may contain anything) into a valid session token.
+_SAFE_SESSION_CHARS = re.compile(r'[^\w._~]')
 
 from apify import Actor
 from playwright.async_api import async_playwright
@@ -72,8 +79,10 @@ async def _setup_context(browser, input_data, proxy_config, hashtag_for_session:
       - Stable IP if a hashtag is retried within the run
     """
     if proxy_config:
-        # Apify sessions accept [a-zA-Z0-9.\-_]; hashtags are already safe.
-        session_id = f"trimi-{hashtag_for_session}-{random.randint(1000,9999)}"
+        # Apify session_id MUST match ^[\w._~]+$ — no hyphens. Scrub the
+        # hashtag of any disallowed chars then build the token with underscores.
+        safe = _SAFE_SESSION_CHARS.sub('_', hashtag_for_session)[:30]
+        session_id = f"trimi_{safe}_{random.randint(1000, 9999)}"
         proxy_url = await proxy_config.new_url(session_id=session_id)
     else:
         proxy_url = None
