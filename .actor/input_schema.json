@@ -6,29 +6,21 @@
     "properties": {
         "hashtags": {
             "title": "Hashtags to scan",
-            "description": "TikTok hashtags (without the # prefix). Defaults are the 40 highest-yielding hashtags from Trimi's historical data — mom-life, wellness-routine, midsize-fashion, and UGC-creator clusters. Override with your own list to A/B test. AVOID medication-specific tags like 'ozempic' or 'mounjarojourney' — historical yield is 0% because those creators are patients, not partnership-ready influencers.",
+            "description": "TikTok hashtags (without the # prefix). Defaults are the 19 hashtags that have delivered ≥6 emails per run in Trimi's actual Apify production data (683 emails across 8 runs). Hashtags historically strong in the free bot but consistently challenged by TikTok on Apify residential IPs have been removed to maximize $/email — feel free to re-add them via the UI to A/B-test.",
             "type": "array",
             "editor": "stringList",
             "uniqueItems": true,
             "prefill": [
-                "momlife", "realmomlife", "wfhmom", "productivemom", "ugccreator",
-                "midsizefashion", "dailyselfcare", "mealprepideas", "mommylife", "weeklyroutine",
-                "momhumor", "momtips", "midsizestyle", "sundayreset", "pilatesinstructor",
-                "workfromhomemom", "sahmlife", "busymom", "midsize", "hotgirlwalk",
-                "mominfluencer", "routinetok", "dayinthelifeofamom", "momofteens", "curvyfashion",
-                "wellness", "plussizefashion", "pilatesathome", "selfcaresunday", "newmom",
-                "dailyroutine", "healthyeating", "motherhoodjourney", "healthyhabits",
-                "fitnesslifestyle", "fitnessgirl", "cleaneating", "fitspo", "fitnesstok", "healthyliving"
+                "productivemom", "momlife", "ugccreator", "midsizefashion", "realmomlife",
+                "dailyselfcare", "wfhmom", "mommylife", "hotgirlwalk", "sahmlife",
+                "weeklyroutine", "workfromhomemom", "routinetok", "mealprepideas", "busymom",
+                "dayinthelifeofamom", "sundayreset", "midsize", "midsizestyle"
             ],
             "default": [
-                "momlife", "realmomlife", "wfhmom", "productivemom", "ugccreator",
-                "midsizefashion", "dailyselfcare", "mealprepideas", "mommylife", "weeklyroutine",
-                "momhumor", "momtips", "midsizestyle", "sundayreset", "pilatesinstructor",
-                "workfromhomemom", "sahmlife", "busymom", "midsize", "hotgirlwalk",
-                "mominfluencer", "routinetok", "dayinthelifeofamom", "momofteens", "curvyfashion",
-                "wellness", "plussizefashion", "pilatesathome", "selfcaresunday", "newmom",
-                "dailyroutine", "healthyeating", "motherhoodjourney", "healthyhabits",
-                "fitnesslifestyle", "fitnessgirl", "cleaneating", "fitspo", "fitnesstok", "healthyliving"
+                "productivemom", "momlife", "ugccreator", "midsizefashion", "realmomlife",
+                "dailyselfcare", "wfhmom", "mommylife", "hotgirlwalk", "sahmlife",
+                "weeklyroutine", "workfromhomemom", "routinetok", "mealprepideas", "busymom",
+                "dayinthelifeofamom", "sundayreset", "midsize", "midsizestyle"
             ]
         },
         "minFollowers": {
@@ -47,9 +39,9 @@
         },
         "maxProfilesPerHashtag": {
             "title": "Max profiles per hashtag",
-            "description": "How many candidate profiles to visit from each hashtag page after pre-filtering. 200 hits diminishing returns; raise only for top-yielding hashtags during dedicated runs.",
+            "description": "How many candidate profiles to visit from each hashtag page after pre-filtering. Production data shows clear diminishing returns past 50 — top hashtags surface 50-90 candidates but only deliver ~5-25 emails. Raise above 50 only if you're targeting a specific high-yield hashtag.",
             "type": "integer",
-            "default": 200,
+            "default": 50,
             "minimum": 10,
             "maximum": 1000
         },
