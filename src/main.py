@@ -126,8 +126,10 @@ async def main() -> None:
                 'Set proxyConfiguration.useApifyProxy = true.'
             )
 
-        n_tabs = int(input_data.get('concurrentProfiles', 3))
-        n_tabs = max(1, min(n_tabs, 8))  # Clamp to sane range
+        # Number of link-scraping tabs (only used for the small subset of
+        # creators whose feed bio has a link but no inline email).
+        n_link_tabs = int(input_data.get('concurrentProfiles', 3))
+        n_link_tabs = max(1, min(n_link_tabs, 4))
 
         seen_usernames: set = set()
         total_pushed = 0
@@ -139,7 +141,6 @@ async def main() -> None:
             try:
                 for h_idx, hashtag in enumerate(hashtags):
                     context = None
-                    profile_tabs: list = []
                     link_tabs: list = []
                     try:
                         # Fresh proxy session per hashtag = fresh exit IP
@@ -150,12 +151,12 @@ async def main() -> None:
                         if h_idx == 0 and pw_proxy:
                             Actor.log.info(f'Proxy: {pw_proxy["server"]} (rotating session per hashtag)')
 
-                        profile_tabs = [await context.new_page() for _ in range(n_tabs)]
-                        link_tabs = [await context.new_page(), await context.new_page()]
+                        # Feed-first: no profile tabs. Only link tabs for the
+                        # no-inline-email-but-has-link subset.
+                        link_tabs = [await context.new_page() for _ in range(n_link_tabs)]
 
                         pushed = await process_hashtag(
                             context=context,
-                            profile_tabs=profile_tabs,
                             link_tabs=link_tabs,
                             hashtag=hashtag,
                             input_data=input_data,
@@ -170,7 +171,7 @@ async def main() -> None:
                         # Log + continue — one bad hashtag shouldn't halt the run
                         Actor.log.exception(f'#{hashtag} failed: {type(e).__name__}: {e}')
                     finally:
-                        for tab in profile_tabs + link_tabs:
+                        for tab in link_tabs:
                             try:
                                 await tab.close()
                             except Exception:
