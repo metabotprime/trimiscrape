@@ -82,8 +82,11 @@ async def process_hashtag(
     max_fol = int(input_data.get('maxFollowers', 150000))
     brand_skip = {s.lower() for s in (input_data.get('brandSkiplist') or [])}
     max_profiles = int(input_data.get('maxProfilesPerHashtag', 200))
+    scrape_link_in_bio = bool(input_data.get('scrapeLinkInBio', True))
+    us_only = bool(input_data.get('usOnly', True))
+    skip_ghost = bool(input_data.get('skipGhostAccounts', True))
 
-    pre_filtered = []
+    pre_filtered = []  # full candidate dicts (carry feed bio/region/bioLink/likes)
     for c in candidates:
         if not isinstance(c, dict):
             continue
@@ -94,7 +97,7 @@ async def process_hashtag(
         fcount = int(c.get('followers') or 0)
         if fcount > 0 and (fcount < min_fol or fcount > max_fol):
             continue
-        pre_filtered.append(uname)
+        pre_filtered.append(c)
         if len(pre_filtered) >= max_profiles:
             break
 
@@ -102,47 +105,109 @@ async def process_hashtag(
     if not pre_filtered:
         return 0
 
-    early_exit_threshold = int(input_data.get('earlyExitNoEmailThreshold', 12))
-    scrape_link_in_bio = bool(input_data.get('scrapeLinkInBio', True))
-    us_only = bool(input_data.get('usOnly', True))
-    skip_ghost = bool(input_data.get('skipGhostAccounts', True))
-
-    n_tabs = len(profile_tabs)
     pushed = 0
-    profiles_checked = 0
+    feed_emails = 0       # emails found directly in the feed bio (zero proxy cost)
+    link_jobs = []        # (candidate) needing a bioLink visit — no inline email
 
-    for batch_start in range(0, len(pre_filtered), n_tabs):
-        if profiles_checked >= early_exit_threshold and pushed == 0:
-            Actor.log.info(
-                f'#{hashtag}: early-exit ({profiles_checked} profiles, 0 emails)'
-            )
-            break
+    for c in pre_filtered:
+        profile = {
+            'username': c.get('username'),
+            'display_name': c.get('nickname', ''),
+            'bio': c.get('bio', ''),
+            'followers': int(c.get('followers') or 0),
+            'likes': int(c.get('likes') or 0),
+            'region': c.get('region', ''),
+            'bioLink': c.get('bioLink', ''),
+        }
 
-        batch = pre_filtered[batch_start:batch_start + n_tabs]
-        coros = [
-            _process_profile(
-                profile_tabs[i], batch[i], hashtag, input_data, link_tabs,
-                scrape_link_in_bio, us_only, skip_ghost,
-                min_fol, max_fol,
-            )
-            for i in range(len(batch))
-        ]
-        results = await asyncio.gather(*coros, return_exceptions=True)
+        # Ghost filter (sizeable followers, zero likes = bought/dead account)
+        if skip_ghost and profile['followers'] >= 5000 and profile['likes'] == 0:
+            continue
+        # US filter — uses feed bio + region, no page visit needed
+        if us_only and not is_likely_us(profile):
+            continue
 
-        for r in results:
-            profiles_checked += 1
-            if isinstance(r, Exception):
-                Actor.log.debug(f'profile error: {type(r).__name__}: {r}')
-                continue
-            if not r:
-                continue
+        email = extract_email_from_bio(profile['bio'])
+        if email:
+            rec = _build_record(profile, hashtag, email, 'bio')
             try:
-                await Actor.push_data(r)
+                await Actor.push_data(rec)
                 pushed += 1
+                feed_emails += 1
             except Exception as e:
                 Actor.log.warning(f'push_data failed: {type(e).__name__}: {e}')
+            continue
 
+        # No inline email — only worth a network visit if there's a link to chase
+        if scrape_link_in_bio and (profile['bioLink'] or extract_scrapeable_links(profile['bio'])):
+            link_jobs.append(profile)
+
+    # Link-in-bio scraping for the no-inline-email subset (much smaller than
+    # the old "visit every profile" path). Run through the link tabs in parallel.
+    link_emails = 0
+    if link_jobs and link_tabs:
+        n = len(link_tabs)
+        for i in range(0, len(link_jobs), n):
+            batch = link_jobs[i:i + n]
+            coros = [
+                _scrape_profile_links(link_tabs[j % n], batch[j], hashtag)
+                for j in range(len(batch))
+            ]
+            results = await asyncio.gather(*coros, return_exceptions=True)
+            for r in results:
+                if isinstance(r, Exception) or not r:
+                    continue
+                try:
+                    await Actor.push_data(r)
+                    pushed += 1
+                    link_emails += 1
+                except Exception as e:
+                    Actor.log.warning(f'push_data failed: {type(e).__name__}: {e}')
+
+    Actor.log.info(
+        f'#{hashtag}: {feed_emails} from feed bios (free) + {link_emails} from links '
+        f'= {pushed} pushed'
+    )
     return pushed
+
+
+def _build_record(profile: dict, hashtag: str, email: str, source: str) -> dict:
+    """Assemble a dataset record from a profile dict + extracted email."""
+    bio = profile.get('bio', '')
+    username = profile.get('username')
+    return {
+        'username': username,
+        'displayName': profile.get('display_name', ''),
+        'bio': bio,
+        'email': email,
+        'emailSource': source,
+        'followers': int(profile.get('followers') or 0),
+        'totalLikes': int(profile.get('likes') or 0),
+        'region': profile.get('region', ''),
+        'ageScore': age_score(profile),
+        'instagramHandle': extract_instagram_handle(bio),
+        'hashtag': hashtag,
+        'profileUrl': f'https://tiktok.com/@{username}',
+        'source': 'trimi_custom',
+        'scrapedAt': datetime.now(timezone.utc).isoformat(),
+    }
+
+
+async def _scrape_profile_links(tab, profile: dict, hashtag: str):
+    """Visit a candidate's bioLink (and other bio URLs) to find an email.
+    Only called for creators whose feed bio had no inline email but did have
+    a link. Returns a record dict or None."""
+    bio = profile.get('bio', '')
+    urls = []
+    if profile.get('bioLink'):
+        urls.append(profile['bioLink'])
+    urls.extend(extract_scrapeable_links(bio)[:2])
+
+    for url in urls:
+        email = await _scrape_link_for_email(tab, url)
+        if email:
+            return _build_record(profile, hashtag, email, 'biolink')
+    return None
 
 
 async def _process_profile(
