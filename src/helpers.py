@@ -340,9 +340,27 @@ EXTRACT_PROFILE_JS = r"""
 """
 
 # Hashtag-page users with stats (pre-filter without per-profile visits)
+# Feed-first extractor. The hashtag feed JSON already carries each author's
+# FULL bio (signature), region, bioLink and stats — so we can extract emails
+# WITHOUT visiting individual profile pages. This is the single biggest cost
+# lever: ~1000 profile loads per run collapse into ~25 hashtag-page loads,
+# cutting residential-proxy bandwidth (96% of run cost) by ~85%.
 EXTRACT_USERS_WITH_STATS_JS = r"""
 () => {
     let users = {};
+    function add(author, stats) {
+        let uid = (author['uniqueId'] || '').toLowerCase();
+        if (!uid || users[uid]) return;
+        users[uid] = {
+            username: uid,
+            nickname: author['nickname'] || '',
+            bio: author['signature'] || '',
+            region: author['region'] || '',
+            bioLink: (author['bioLink'] || {})['link'] || '',
+            followers: stats['followerCount'] || 0,
+            likes: stats['heartCount'] || stats['heart'] || 0,
+        };
+    }
     try {
         let script = document.querySelector('script#__UNIVERSAL_DATA_FOR_REHYDRATION__');
         if (script) {
@@ -353,13 +371,24 @@ EXTRACT_USERS_WITH_STATS_JS = r"""
             for (let item of itemList) {
                 let author = item['author'] || {};
                 let stats = item['authorStats'] || author['stats'] || {};
-                let uid = (author['uniqueId'] || '').toLowerCase();
-                if (uid && !users[uid]) {
-                    users[uid] = {
-                        username: uid,
-                        followers: stats['followerCount'] || 0,
-                        nickname: author['nickname'] || '',
-                    };
+                add(author, stats);
+            }
+        }
+    } catch(e) {}
+    // Also harvest from SIGI_STATE item module (covers XHR-appended scroll items)
+    try {
+        let sigi = document.querySelector('script#SIGI_STATE');
+        if (sigi) {
+            let data = JSON.parse(sigi.textContent);
+            let items = (data['ItemModule'] || {});
+            let userMod = (data['UserModule'] || {});
+            let uList = userMod['users'] || {};
+            let sList = userMod['stats'] || {};
+            for (let k in items) {
+                let it = items[k] || {};
+                let uname = it['author'];
+                if (uname && uList[uname]) {
+                    add(uList[uname], sList[uname] || {});
                 }
             }
         }
@@ -371,7 +400,7 @@ EXTRACT_USERS_WITH_STATS_JS = r"""
             if (match) {
                 let u = match[1].toLowerCase();
                 if (u.length > 1 && !['explore','discover','tag','search','live'].includes(u) && !users[u]) {
-                    users[u] = {username: u, followers: 0, nickname: ''};
+                    users[u] = {username: u, followers: 0, likes: 0, nickname: '', bio: '', region: '', bioLink: ''};
                 }
             }
         }
